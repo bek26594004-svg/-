@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FBF3E8">
+<title>오늘의 용돈</title>
+<style>
+:root{
+  --bg:#FBF3E8; --card:#FFFFFF; --ink:#4A3F3A; --sub:#7A6C64;
+  --mint:#BFE3D0; --mint-d:#2F6B55; --peach:#F7C9B6; --peach-d:#9A4A2E; --line:#EADFD0;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#FBF3E8; }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
+  font-size:18px; line-height:1.5;
+  padding:max(16px,env(safe-area-inset-top)) 16px max(32px,env(safe-area-inset-bottom));
+}
+main{max-width:480px;margin:0 auto}
+h1{font-size:24px;margin:8px 0 16px}
+.card{background:var(--card);border-radius:20px;padding:20px;margin-bottom:16px;border:1px solid var(--line)}
+.summary{background:var(--mint);border-color:var(--mint)}
+.summary .label{font-size:16px;color:var(--mint-d)}
+.summary .big{font-size:40px;font-weight:700;color:var(--ink);margin:2px 0 10px}
+.summary .big.over{color:var(--peach-d)}
+.row{display:flex;justify-content:space-between;font-size:17px;padding:4px 0}
+.bar{height:12px;background:rgba(255,255,255,.7);border-radius:6px;overflow:hidden;margin-top:8px}
+.bar>i{display:block;height:100%;width:0;background:var(--mint-d);border-radius:6px;transition:width .3s}
+.bar>i.over{background:var(--peach-d)}
+label{display:block;font-size:16px;color:var(--sub);margin:12px 0 6px}
+input{
+  width:100%;min-height:52px;font:inherit;color:var(--ink);background:#FFFDF9;
+  border:2px solid var(--line);border-radius:14px;padding:10px 14px;
+}
+input:focus{outline:3px solid var(--peach);border-color:var(--peach-d)}
+button{
+  font:inherit;font-weight:700;min-height:56px;border:0;border-radius:16px;cursor:pointer;
+  background:var(--peach);color:var(--peach-d);width:100%;margin-top:16px;
+}
+button:active{transform:scale(.98)}
+button.small{width:auto;min-height:48px;margin:0;padding:0 18px;background:var(--mint);color:var(--mint-d)}
+button.del{width:auto;min-height:44px;margin:0;padding:0 14px;background:#F3E6DA;color:var(--sub);font-size:16px}
+.inline{display:flex;gap:10px;align-items:flex-end}
+.inline>div{flex:1}
+.msg{min-height:24px;font-size:16px;margin-top:10px;color:var(--peach-d)}
+.msg.ok{color:var(--mint-d)}
+h2{font-size:20px;margin:0 0 8px}
+.day{font-size:15px;color:var(--sub);margin:14px 0 4px}
+.item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.item .t{flex:1;min-width:0;word-break:break-all}
+.item .amt{font-weight:700;white-space:nowrap}
+.empty{color:var(--sub);padding:12px 0}
+.note{font-size:14px;color:var(--sub);text-align:center}
+</style>
+</head>
+<body>
+<main>
+  <h1>🌸 오늘의 용돈</h1>
+
+  <section class="card summary" aria-live="polite">
+    <div class="label" id="monthLabel">이번 달 남은 용돈</div>
+    <div class="big" id="remain">0원</div>
+    <div class="row"><span>한 달 용돈</span><b id="allowShow">0원</b></div>
+    <div class="row"><span>이번 달 사용액</span><b id="spentShow">0원</b></div>
+    <div class="bar"><i id="barFill"></i></div>
+  </section>
+
+  <section class="card">
+    <h2>한 달 용돈 정하기</h2>
+    <div class="inline">
+      <div>
+        <label for="allowance" style="margin-top:0">금액(원)</label>
+        <input id="allowance" type="number" inputmode="numeric" min="0" placeholder="예: 300000">
+      </div>
+      <button class="small" id="saveAllow" type="button">설정</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>지출 입력</h2>
+    <label for="date" style="margin-top:0">날짜</label>
+    <input id="date" type="date">
+    <label for="amount">쓴 금액(원)</label>
+    <input id="amount" type="number" inputmode="numeric" min="1" placeholder="예: 4500">
+    <label for="memo">메모(선택)</label>
+    <input id="memo" type="text" maxlength="30" placeholder="예: 점심 김밥">
+    <button id="saveBtn" type="button">저장하기</button>
+    <div class="msg" id="msg" role="status"></div>
+  </section>
+
+  <section class="card">
+    <h2>이번 달 지출 목록</h2>
+    <div id="list"></div>
+  </section>
+
+  <p class="note">기록은 이 스마트폰의 브라우저에만 저장돼요.</p>
+</main>
+
+<script>
+(function(){
+  var KEY_ITEMS = "todayAllowance.items";
+  var KEY_ALLOW = "todayAllowance.allowance";
+  var memory = {};
+
+  function load(key, fallback){
+    try{
+      var v = localStorage.getItem(key);
+      if(v === null) return (key in memory) ? memory[key] : fallback;
+      return JSON.parse(v);
+    }catch(e){ return (key in memory) ? memory[key] : fallback; }
+  }
+  function save(key, value){
+    memory[key] = value;
+    try{ localStorage.setItem(key, JSON.stringify(value)); }catch(e){}
+  }
+
+  var items = load(KEY_ITEMS, []);
+  var allowance = Number(load(KEY_ALLOW, 0)) || 0;
+  if(!Array.isArray(items)) items = [];
+
+  var $ = function(id){ return document.getElementById(id); };
+  function won(n){ return Number(n).toLocaleString("ko-KR") + "원"; }
+  function pad(n){ return n < 10 ? "0" + n : "" + n; }
+  function todayStr(){
+    var d = new Date();
+    return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate());
+  }
+  function monthPrefix(){ return todayStr().slice(0,7); }
+
+  function say(text, ok){
+    var m = $("msg");
+    m.textContent = text;
+    m.className = "msg" + (ok ? " ok" : "");
+  }
+
+  function render(){
+    var prefix = monthPrefix();
+    var thisMonth = items.filter(function(it){ return it.date.indexOf(prefix) === 0; });
+    thisMonth.sort(function(a,b){
+      return a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id;
+    });
+    var spent = thisMonth.reduce(function(s,it){ return s + it.amount; }, 0);
+    var remain = allowance - spent;
+
+    $("monthLabel").textContent = Number(prefix.slice(5)) + "월 남은 용돈";
+    var big = $("remain");
+    big.textContent = (remain < 0 ? "-" : "") + won(Math.abs(remain));
+    big.className = "big" + (remain < 0 ? " over" : "");
+    $("allowShow").textContent = won(allowance);
+    $("spentShow").textContent = won(spent);
+
+    var pct = allowance > 0 ? Math.min(100, Math.round(spent / allowance * 100)) : 0;
+    var bar = $("barFill");
+    bar.style.width = pct + "%";
+    bar.className = remain < 0 ? "over" : "";
+
+    var list = $("list");
+    list.textContent = "";
+    if(thisMonth.length === 0){
+      var e = document.createElement("div");
+      e.className = "empty";
+      e.textContent = "아직 기록이 없어요. 위에서 첫 지출을 저장해 보세요.";
+      list.appendChild(e);
+      return;
+    }
+    var lastDate = "";
+    thisMonth.forEach(function(it){
+      if(it.date !== lastDate){
+        var d = document.createElement("div");
+        d.className = "day";
+        d.textContent = Number(it.date.slice(5,7)) + "월 " + Number(it.date.slice(8,10)) + "일";
+        list.appendChild(d);
+        lastDate = it.date;
+      }
+      var row = document.createElement("div");
+      row.className = "item";
+      var t = document.createElement("span");
+      t.className = "t";
+      t.textContent = it.memo || "지출";
+      var a = document.createElement("span");
+      a.className = "amt";
+      a.textContent = won(it.amount);
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "del";
+      b.textContent = "삭제";
+      b.setAttribute("aria-label", (it.memo || "지출") + " 삭제");
+      b.addEventListener("click", function(){
+        if(confirm("이 기록을 삭제할까요?")){
+          items = items.filter(function(x){ return x.id !== it.id; });
+          save(KEY_ITEMS, items);
+          say("삭제했어요.", true);
+          render();
+        }
+      });
+      row.appendChild(t); row.appendChild(a); row.appendChild(b);
+      list.appendChild(row);
+    });
+  }
+
+  $("date").value = todayStr();
+  if(allowance > 0) $("allowance").value = allowance;
+
+  $("saveAllow").addEventListener("click", function(){
+    var v = Number($("allowance").value);
+    if(!isFinite(v) || v < 0 || $("allowance").value === ""){
+      say("용돈은 0 이상의 숫자로 입력해 주세요.", false);
+      return;
+    }
+    allowance = Math.round(v);
+    save(KEY_ALLOW, allowance);
+    say("한 달 용돈을 " + won(allowance) + "으로 설정했어요.", true);
+    render();
+  });
+
+  $("saveBtn").addEventListener("click", function(){
+    var date = $("date").value;
+    var raw = $("amount").value;
+    var amount = Number(raw);
+    var memo = $("memo").value.trim();
+    if(!date){ say("날짜를 선택해 주세요.", false); return; }
+    if(raw === "" || !isFinite(amount) || amount <= 0){
+      say("쓴 금액을 1원 이상의 숫자로 입력해 주세요.", false);
+      return;
+    }
+    items.push({ id: Date.now(), date: date, amount: Math.round(amount), memo: memo });
+    save(KEY_ITEMS, items);
+    $("amount").value = "";
+    $("memo").value = "";
+    say(won(Math.round(amount)) + " 저장했어요. 이어서 입력할 수 있어요.", true);
+    render();
+    $("amount").focus();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
